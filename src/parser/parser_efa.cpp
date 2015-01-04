@@ -101,8 +101,6 @@
 
 QHash<QString, JourneyDetailResultList *> cachedJourneyDetailsPTV;
 
-#define getAttribute(node, key) (node.attributes().namedItem(key).toAttr().value())
-
 ParserEFA::ParserEFA(QObject *parent) :
     ParserAbstract(parent){
 
@@ -276,16 +274,16 @@ void ParserEFA::parseStationsByCoordinates(QNetworkReply *networkReply)
         QDomNodeList modeNodeList = doc.elementsByTagName("itdStopModes");
         if(nodeList.count() == modeNodeList.count()){
             for (int i = 0; i < nodeList.size(); ++i) {
-                QDomNode node = nodeList.item(i);
-                QDomNode modeNode = modeNodeList.item(i);
+                QDomElement assignedStop = nodeList.item(i).toElement();
+                QDomElement stopModes = modeNodeList.item(i).toElement();
                 Station item;
 
-                QString value = getAttribute(node, "value");
+                QString value = assignedStop.attribute("value");
                 item.name=value.section(":",1,-1);
                 item.id=value.section(":",0,0);
-                item.type = getAttribute(modeNode, "mode");
-                item.latitude = getAttribute(node, "x").toDouble();
-                item.longitude = getAttribute(node, "y").toDouble();
+                item.type = stopModes.attribute("mode");
+                item.latitude = assignedStop.attribute("x").toDouble();
+                item.longitude = assignedStop.attribute("y").toDouble();
 
                 result << item;
             }
@@ -300,14 +298,14 @@ void ParserEFA::checkForError(QDomDocument *serverReplyDomDoc)
 {
     QDomNodeList errorNodeList = serverReplyDomDoc->elementsByTagName("itdMessage");
     for(int i = 0; i < errorNodeList.size(); ++i) {
-        QDomNode node = errorNodeList.item(i);
-        QString error = getAttribute(node, "type");
-        QString code = getAttribute(node, "code");
+        QDomElement message = errorNodeList.item(i).toElement();
+        QString error = message.attribute("type");
+        QString code = message.attribute("code");
         if (code == "-8011") {
             continue;
         }
-        if(error == "error" && code.toInt() < 0) {
-            QString errorText = node.toElement().text();
+        if (error == "error" && code.toInt() < 0) {
+            QString errorText = message.text();
             if(errorText.length() < 1)
                 errorText = code;
             qDebug() << "Server Query Error:" << errorText << code;
@@ -329,18 +327,18 @@ void ParserEFA::parseStationsByName(QNetworkReply *networkReply)
         //Check for error: <itdMessage type="error" module="BROKER" code="-2000">stop invalid</itdMessage>
         QDomNodeList errorNodeList = doc.elementsByTagName("itdMessage");
         for(int i = 0; i < errorNodeList.size(); ++i) {
-            QDomNode node = errorNodeList.item(i);
-            QString error = getAttribute(node, "type");
+            QDomElement message = errorNodeList.item(i).toElement();
+            QString error = message.attribute("type");
             if(error == "error")
             {
-                qDebug() << "Query Error:" << node.toElement().text();
+                qDebug() << "Query Error:" << message.text();
             }
         }
 
-        QDomNode requestInfo = doc.elementsByTagName("itdRequest").item(0);
-        int version = getAttribute(requestInfo, "version").section(".",0,0).toInt();
+        QDomElement requestInfo = doc.elementsByTagName("itdRequest").item(0).toElement();
+        int version = requestInfo.attribute("version").section(".",0,0).toInt();
 
-        qDebug() << "EFA version:" << version << ", complete version:" << getAttribute(requestInfo, "version");
+        qDebug() << "EFA version:" << version << ", complete version:" << requestInfo.attribute("version");
         if(version < 10) {
             QDomNodeList nodeList = doc.elementsByTagName("odvNameElem");
             QDomNodeList modeNodeList = doc.elementsByTagName("itdStopModes");
@@ -348,42 +346,37 @@ void ParserEFA::parseStationsByName(QNetworkReply *networkReply)
             QStringList idList;
 
             for (int i = 0; i < nodeList.size(); ++i) {
-                QDomNode node = nodeList.item(i);
+                QDomElement nameElement = nodeList.item(i).toElement();
                 Station item;
 
-                item.name = getAttribute(node, "objectName");
-                item.id = getAttribute(node, "id");
+                item.name = nameElement.attribute("objectName");
+                item.id = nameElement.attribute("id");
                 idList.append(item.id.toString());
-                item.latitude = getAttribute(node, "x").toDouble();
-                item.longitude = getAttribute(node, "y").toDouble();
-                //item.type = getAttribute(modeNode, "mode");
+                item.latitude = nameElement.attribute("x").toDouble();
+                item.longitude = nameElement.attribute("y").toDouble();
 
                 result << item;
             }
 
             for(int i = 0; i < modeNodeList.size(); ++i) {
-                QDomNode modeNode = modeNodeList.item(i);
-                QString id = getAttribute(modeNode, "id");
-
+                QDomElement stopMode = modeNodeList.item(i).toElement();
+                QString id = stopMode.attribute("id");
                 int idIndex = idList.indexOf(id);
                 if(idIndex > -1)
-                    result[idIndex].type = getAttribute(modeNode, "mode");
-
+                    result[idIndex].type = stopMode.attribute("mode");
             }
-        }
-        else {
+        } else {
             // London, Ireland, Sydney
             QDomNodeList nodeList = doc.elementsByTagName("odvNameElem");
             for(int i = 0; i < nodeList.size(); ++i) {
-                QDomNode node = nodeList.item(i);
+                QDomElement nameElement = nodeList.item(i).toElement();
                 Station item;
-                item.name = node.toElement().text();
-                item.id = getAttribute(node, "stopID");
+                item.name = nameElement.text();
+                item.id = nameElement.attribute("stopID");
                 if(item.id.isNull())
-                    item.id = getAttribute(node, "id");
-                item.latitude = getAttribute(node, "x").toDouble();
-                item.longitude = getAttribute(node, "y").toDouble();
-                //item.type = getAttribute(modeNode, "mode");
+                    item.id = nameElement.attribute("id");
+                item.latitude = nameElement.attribute("x").toDouble();
+                item.longitude = nameElement.attribute("y").toDouble();
 
                 result << item;
             }
@@ -674,18 +667,18 @@ void ParserEFA::parseTimeTable(QNetworkReply *networkReply)
         if (nodeList.isEmpty()) {
             nodeList = doc.elementsByTagName("itdDateTime");
         }
-        for(int i = 0; i < nodeList.size(); ++i) {
-            QDomNode node = nodeList.item(i);
+        for (int i = 0; i < nodeList.size(); ++i) {
+            QDomElement departure = nodeList.item(i).toElement();
             TimetableEntry item;
 
-            item.platform = getAttribute(node, "platformName");
-            QDomElement servingLineElement = node.firstChildElement("itdServingLine");
-            item.destinationStation = getAttribute(servingLineElement, "direction");
-            item.trainType = getAttribute(servingLineElement, "motType");
-            QDomElement dateTimeElement = node.firstChildElement("itdDateTime");
+            item.platform = departure.attribute("platformName");
+            QDomElement servingLineElement = departure.firstChildElement("itdServingLine");
+            item.destinationStation = servingLineElement.attribute("direction");
+            item.trainType = servingLineElement.attribute("motType");
+            QDomElement dateTimeElement = departure.firstChildElement("itdDateTime");
             const QDateTime scheduledDateTime = parseItdDateTime(dateTimeElement);
             item.time = scheduledDateTime.time();
-            const QString realTimeStr = getAttribute(node, "countdown");    // In minutes from search time
+            const QString realTimeStr = departure.attribute("countdown");    // In minutes from search time
             if (!realTimeStr.isEmpty()) {
                 const int realCountdown = realTimeStr.toInt();
                 const int scheduledCountdown = qRound(referenceDateTime.secsTo(scheduledDateTime) / 60.);
@@ -693,8 +686,7 @@ void ParserEFA::parseTimeTable(QNetworkReply *networkReply)
                 if (minutesTo > 3) {
                     //qDebug() << "Running late";
                     item.miscInfo = tr("<span style=\"color:#b30;\">%1 min late</span>").arg(minutesTo);
-                }
-                else                {
+                } else {
                     //qDebug() << "Running on-time";
                     item.miscInfo = tr("<span style=\"color:#093; font-weight: normal;\">on time</span>");
                 }
@@ -713,8 +705,8 @@ QDateTime ParserEFA::parseItdDateTime(const QDomElement &element)
 {
     QDomElement dateElement = element.firstChildElement("itdDate");
     QDomElement timeElement = element.firstChildElement("itdTime");
-    const QDate date(getAttribute(dateElement, "year").toInt(), getAttribute(dateElement, "month").toInt(), getAttribute(dateElement, "day").toInt());
-    const QTime time(getAttribute(timeElement, "hour").toInt(), getAttribute(timeElement, "minute").toInt(), 0);
+    const QDate date(dateElement.attribute("year").toInt(), dateElement.attribute("month").toInt(), dateElement.attribute("day").toInt());
+    const QTime time(timeElement.attribute("hour").toInt(), timeElement.attribute("minute").toInt(), 0);
     return QDateTime(date, time);
 }
 
